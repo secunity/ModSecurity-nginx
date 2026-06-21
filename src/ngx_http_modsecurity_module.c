@@ -662,8 +662,8 @@ ngx_http_modsecurity_triggered_rules_variable(ngx_http_request_t *r,
         return NGX_OK;
     }
 
-    /* Overflow check */
-    if (size > ((size_t) -1) / (NGX_INT64_LEN + 1)) {
+    /* Overflow check for the ids[] allocation below (one int64_t per id) */
+    if (size > ((size_t) -1) / sizeof(int64_t)) {
         return NGX_ERROR;
     }
 
@@ -679,7 +679,11 @@ ngx_http_modsecurity_triggered_rules_variable(ngx_http_request_t *r,
         return NGX_OK;
     }
 
-    /* NGX_INT64_LEN digits per id + one comma separator per id */
+    /* NGX_INT64_LEN digits per id + one comma separator per id.
+     * Overflow check for the text buffer allocation below. */
+    if (written > ((size_t) -1) / (NGX_INT64_LEN + 1)) {
+        return NGX_ERROR;
+    }
     cap = written * (NGX_INT64_LEN + 1);
     buf = ngx_pnalloc(r->pool, cap);
     if (buf == NULL) {
