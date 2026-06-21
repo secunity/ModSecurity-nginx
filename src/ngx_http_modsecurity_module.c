@@ -33,6 +33,8 @@ static ngx_int_t ngx_http_modsecurity_init(ngx_conf_t *cf);
 static ngx_int_t ngx_http_modsecurity_add_variables(ngx_conf_t *cf);
 static ngx_int_t ngx_http_modsecurity_intervention_variable(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t data);
+static ngx_int_t ngx_http_modsecurity_deny_variable(ngx_http_request_t *r,
+    ngx_http_variable_value_t *v, uintptr_t data);
 static ngx_int_t ngx_http_modsecurity_triggered_rules_variable(
     ngx_http_request_t *r, ngx_http_variable_value_t *v, uintptr_t data);
 static void *ngx_http_modsecurity_create_main_conf(ngx_conf_t *cf);
@@ -47,6 +49,10 @@ static ngx_http_variable_t ngx_http_modsecurity_vars[] = {
 
     { ngx_string("modsecurity_intervention"), NULL,
       ngx_http_modsecurity_intervention_variable,
+      0, NGX_HTTP_VAR_NOCACHEABLE, 0 },
+
+    { ngx_string("modsecurity_deny"), NULL,
+      ngx_http_modsecurity_deny_variable,
       0, NGX_HTTP_VAR_NOCACHEABLE, 0 },
 
     { ngx_string("modsecurity_triggered_rules"), NULL,
@@ -181,6 +187,13 @@ ngx_http_modsecurity_process_intervention (Transaction *transaction, ngx_http_re
     }
 
     ctx->intervention_triggered = 1;
+
+    /* A deny/drop/block sets a disruptive action with an error status and no
+     * redirect URL. A redirect is also disruptive but carries a URL, so it is
+     * excluded here. */
+    if (intervention.disruptive && intervention.url == NULL) {
+        ctx->intervention_disruptive = 1;
+    }
 
     mcf = ngx_http_get_module_loc_conf(r, ngx_http_modsecurity_module);
     if (mcf == NULL) {
@@ -596,6 +609,26 @@ ngx_http_modsecurity_intervention_variable(ngx_http_request_t *r,
     ctx = ngx_http_modsecurity_get_module_ctx(r);
 
     v->data = (ctx != NULL && ctx->intervention_triggered) ? &one : &zero;
+    v->len = 1;
+    v->valid = 1;
+    v->no_cacheable = 1;
+    v->not_found = 0;
+
+    return NGX_OK;
+}
+
+
+static ngx_int_t
+ngx_http_modsecurity_deny_variable(ngx_http_request_t *r,
+    ngx_http_variable_value_t *v, uintptr_t data)
+{
+    ngx_http_modsecurity_ctx_t  *ctx;
+    static u_char                zero = '0';
+    static u_char                one  = '1';
+
+    ctx = ngx_http_modsecurity_get_module_ctx(r);
+
+    v->data = (ctx != NULL && ctx->intervention_disruptive) ? &one : &zero;
     v->len = 1;
     v->valid = 1;
     v->no_cacheable = 1;

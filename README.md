@@ -192,7 +192,14 @@ This module exposes the following variables that can be used in `log_format` or 
 modsecurity_intervention
 -------------------------
 **value:** *`1` if ModSecurity triggered a disruptive intervention
-(deny, redirect, etc.) on the request, `0` otherwise*
+(`deny`, `drop`, `block` or `redirect`) on the request, `0` otherwise.
+A non-disruptive `status` change alone does not count as an intervention.*
+
+modsecurity_deny
+----------------
+**value:** *`1` if ModSecurity blocked the request/response with a
+disruptive action (`deny`, `drop`, `block`), `0` otherwise. Unlike
+`$modsecurity_intervention`, a `redirect` does not set this to `1`.*
 
 modsecurity_triggered_rules
 ----------------------------
@@ -202,6 +209,7 @@ or `-` when no rule matched*
 ```nginx
 log_format modsec '$remote_addr [$time_local] "$request" $status '
                   'intervention=$modsecurity_intervention '
+                  'deny=$modsecurity_deny '
                   'rules=$modsecurity_triggered_rules';
 
 server {
