@@ -514,6 +514,72 @@ char *ngx_conf_set_transaction_id(ngx_conf_t *cf, ngx_command_t *cmd, void *conf
 }
 
 
+/*
+ * modsecurity_tx_var <key> <value>
+ *
+ * Publishes <value> (which may reference nginx variables) into the
+ * ModSecurity TX collection under <key>, so that rules can reach it as
+ * TX:<key>. May be specified multiple times.
+ */
+char *ngx_conf_set_tx_var(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
+    ngx_str_t                         *value;
+    ngx_http_compile_complex_value_t   ccv;
+    ngx_http_modsecurity_conf_t       *mcf = conf;
+    ngx_http_modsecurity_tx_var_t     *tx_var;
+    ngx_uint_t                         i;
+
+    value = cf->args->elts;
+
+    if (value[1].len == 0) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "invalid empty variable name in \"%V\"", &cmd->name);
+        return NGX_CONF_ERROR;
+    }
+
+    if (mcf->tx_vars == NGX_CONF_UNSET_PTR) {
+        mcf->tx_vars = ngx_array_create(cf->pool, 4,
+                                        sizeof(ngx_http_modsecurity_tx_var_t));
+        if (mcf->tx_vars == NULL) {
+            return NGX_CONF_ERROR;
+        }
+    }
+
+    /* TX keys are case insensitive in ModSecurity; reject dupes early */
+    tx_var = mcf->tx_vars->elts;
+    for (i = 0; i < mcf->tx_vars->nelts; i++) {
+        if (tx_var[i].key.len == value[1].len
+            && ngx_strncasecmp(tx_var[i].key.data, value[1].data,
+                               value[1].len) == 0)
+        {
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                               "duplicate \"%V\" variable \"%V\"",
+                               &cmd->name, &value[1]);
+            return NGX_CONF_ERROR;
+        }
+    }
+
+    tx_var = ngx_array_push(mcf->tx_vars);
+    if (tx_var == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+    ngx_memzero(tx_var, sizeof(ngx_http_modsecurity_tx_var_t));
+    tx_var->key = value[1];
+
+    ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
+
+    ccv.cf = cf;
+    ccv.value = &value[2];
+    ccv.complex_value = &tx_var->value;
+
+    if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
+        return NGX_CONF_ERROR;
+    }
+
+    return NGX_CONF_OK;
+}
+
+
 static ngx_command_t ngx_http_modsecurity_commands[] =  {
   {
     ngx_string("modsecurity"),
@@ -551,6 +617,14 @@ static ngx_command_t ngx_http_modsecurity_commands[] =  {
     ngx_string("modsecurity_transaction_id"),
     NGX_HTTP_LOC_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_MAIN_CONF|NGX_CONF_1MORE,
     ngx_conf_set_transaction_id,
+    NGX_HTTP_LOC_CONF_OFFSET,
+    0,
+    NULL
+  },
+  {
+    ngx_string("modsecurity_tx_var"),
+    NGX_HTTP_LOC_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_MAIN_CONF|NGX_CONF_TAKE2,
+    ngx_conf_set_tx_var,
     NGX_HTTP_LOC_CONF_OFFSET,
     0,
     NULL
@@ -887,6 +961,7 @@ ngx_http_modsecurity_create_conf(ngx_conf_t *cf)
     conf->rules_set = msc_create_rules_set();
     conf->pool = cf->pool;
     conf->transaction_id = NGX_CONF_UNSET_PTR;
+    conf->tx_vars = NGX_CONF_UNSET_PTR;
     conf->use_error_log = NGX_CONF_UNSET;
 #if defined(MODSECURITY_SANITY_CHECKS) && (MODSECURITY_SANITY_CHECKS)
     conf->sanity_checks_enabled = NGX_CONF_UNSET;
@@ -927,6 +1002,7 @@ ngx_http_modsecurity_merge_conf(ngx_conf_t *cf, void *parent, void *child)
 
     ngx_conf_merge_value(c->enable, p->enable, 0);
     ngx_conf_merge_ptr_value(c->transaction_id, p->transaction_id, NULL);
+    ngx_conf_merge_ptr_value(c->tx_vars, p->tx_vars, NULL);
     ngx_conf_merge_value(c->use_error_log, p->use_error_log, 1);
 #if defined(MODSECURITY_SANITY_CHECKS) && (MODSECURITY_SANITY_CHECKS)
     ngx_conf_merge_value(c->sanity_checks_enabled, p->sanity_checks_enabled, 0);

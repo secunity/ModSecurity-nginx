@@ -113,6 +113,16 @@ typedef struct {
 } ngx_http_modsecurity_main_conf_t;
 
 
+/*
+ * A single `modsecurity_tx_var <key> <value>` mapping: the nginx side of
+ * the value is a complex value, so it may reference nginx variables.
+ */
+typedef struct {
+    ngx_str_t                  key;
+    ngx_http_complex_value_t   value;
+} ngx_http_modsecurity_tx_var_t;
+
+
 typedef struct {
     void                      *pool;
     /* RulesSet or Rules */
@@ -125,6 +135,9 @@ typedef struct {
 #endif
 
     ngx_http_complex_value_t  *transaction_id;
+
+    /* array of ngx_http_modsecurity_tx_var_t */
+    ngx_array_t               *tx_vars;
 } ngx_http_modsecurity_conf_t;
 
 
