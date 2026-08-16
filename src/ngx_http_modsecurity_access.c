@@ -267,6 +267,42 @@ ngx_http_modsecurity_access_handler(ngx_http_request_t *r)
         }
 
         /**
+         * Publish the configured nginx values into the ModSecurity TX
+         * collection, so that the rules can reach them as TX:<key>. This must
+         * happen before msc_process_request_headers(), which evaluates the
+         * phase 1 rules.
+         */
+        if (mcf->tx_vars != NULL) {
+            ngx_http_modsecurity_tx_var_t *tx_var = mcf->tx_vars->elts;
+            ngx_str_t                      tx_value;
+            ngx_uint_t                     j;
+
+            for (j = 0; j < mcf->tx_vars->nelts; j++) {
+                if (ngx_http_complex_value(r, &tx_var[j].value, &tx_value)
+                    != NGX_OK)
+                {
+                    return NGX_HTTP_INTERNAL_SERVER_ERROR;
+                }
+
+                /* An unset or empty nginx variable leaves TX:<key> absent,
+                 * so rules can tell "no value" apart from an empty one. */
+                if (tx_value.len == 0) {
+                    continue;
+                }
+
+                dd("Setting TX variable: %.*s with value %.*s",
+                   (int) tx_var[j].key.len, tx_var[j].key.data,
+                   (int) tx_value.len, tx_value.data);
+
+                msc_set_n_tx_var(ctx->modsec_transaction,
+                    (const unsigned char *) tx_var[j].key.data,
+                    tx_var[j].key.len,
+                    (const unsigned char *) tx_value.data,
+                    tx_value.len);
+            }
+        }
+
+        /**
          * Since ModSecurity already knew about all headers, i guess it is safe
          * to process this information.
          */

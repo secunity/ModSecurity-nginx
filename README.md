@@ -185,6 +185,50 @@ modsecurity_use_error_log
 
 Turns on or off ModSecurity error log functionality.
 
+modsecurity_tx_var
+-----------
+**syntax:** *modsecurity_tx_var &lt;key&gt; &lt;value&gt;*
+
+**context:** *http, server, location*
+
+**default:** *none*
+
+Publishes an nginx value into the ModSecurity `TX` (transaction) collection,
+where the rules can reach it as `TX:<key>` — exactly as if a
+`setvar:tx.<key>=<value>` action had run. The `<value>` may contain nginx
+variables, which lets host-side data that libModSecurity has no knowledge of
+(such as a TLS fingerprint) be used in rules.
+
+The directive may be specified multiple times, one per variable:
+
+```nginx
+server {
+    listen 8080;
+    modsecurity on;
+
+    modsecurity_tx_var ssl_ja4 $http_ssl_ja4;
+    modsecurity_tx_var tenant  $http_x_tenant;
+
+    modsecurity_rules '
+        SecRuleEngine On
+        SecRule TX:ssl_ja4 "@pm t13d1516h2_8daaf6152771_02713d6af862" \
+            "id:1000,phase:1,log,deny,status:403,msg:\'blocked JA4 fingerprint\'"
+    ';
+}
+```
+
+Notes:
+
+* The value is set before the phase 1 rules run, so it is visible to every
+  phase.
+* `TX` keys are case insensitive: `TX:ssl_ja4` and `TX:SSL_JA4` are the same
+  variable.
+* If the nginx value is empty (e.g. the source variable is not set), `TX:<key>`
+  is left unset, so rules can distinguish "no value" from an empty value.
+* As with most nginx array directives, a `modsecurity_tx_var` in a location
+  replaces the inherited list rather than appending to it.
+* This requires a libModSecurity providing `msc_set_n_tx_var()`.
+
 # Variables
 
 This module exposes the following variables that can be used in `log_format` or anywhere else nginx variables are valid.
